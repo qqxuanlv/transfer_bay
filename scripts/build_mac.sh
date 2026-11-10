@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+root="$PWD"
+out="${OUT_DIR:-$root/release}"
+mkdir -p "$out"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+app="$work/image/TransferBay.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp packaging/mac.swift "$work/main.swift"
+swiftc -target arm64-apple-macos13 "$work/main.swift" packaging/MenuTransfer.swift -o "$app/Contents/MacOS/TransferBay"
+"${PYTHON:-python3}" -m PyInstaller --noconfirm --onedir --name feidu-server --add-data "$root/static:static" --distpath "$work/dist" --workpath "$work/build" --specpath "$work" "$root/server.py"
+ditto "$work/dist/feidu-server" "$app/Contents/Resources/engine"
+cp packaging/Info.plist "$app/Contents/"
+cp packaging/Feidu.icns "$app/Contents/Resources/"
+codesign --force --deep --sign - "$app"
+codesign --verify --strict --deep "$app"
+ln -s /Applications "$work/image/Applications"
+hdiutil create -quiet -ov -format UDZO -volname TransferBay -srcfolder "$work/image" "$out/TransferBay-macOS-arm64.dmg"
+hdiutil verify -quiet "$out/TransferBay-macOS-arm64.dmg"
+ditto "$app" "$out/TransferBay.app"
